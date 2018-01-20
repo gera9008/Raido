@@ -1,0 +1,43 @@
+# Compiled class file
+*.class
+
+# Log file
+*.log
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files #
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+
+# backup files
+*.*~
+\#*\#
+\.\#*
+
+# Gradle files
+/.gradle
+/build
+
+# Intellij IDEA files
+/.idea
+/*.iml
+/src/main/generated
+/out
+
+# Dev config
+/src/main/resources/application-default.yml
+/src/main/resources/logback-overrides.xml
+/src/integration-test/resources/logback-test.xml
+/overrides.gradle
