@@ -37,8 +37,8 @@ hs_err_pid*
 /src/main/generated
 /out
 
-/raido-engine/src/main/java/com/raidoengine/data_structure
-/raido-engine/src/main/java/com/raidoengine/engine
+/raido-engine/src/main/java/com/raidoengine/algorithm
+/raido-engine/src/main/java/com/raidoengine/model
 /raido-engine/src/main/java/com/raidoengine/routeparsing
 /raido-engine/src/main/java/com/raidoengine/util
 /raido-engine/src/test

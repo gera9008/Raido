@@ -1,143 +1,119 @@
 package com.raidoengine;
 
-import com.raidoengine.data_structure.edge.Edge;
-import com.raidoengine.data_structure.graph.RailwayRouteGraph;
-import com.raidoengine.data_structure.route.TrainRoute;
-import com.raidoengine.data_structure.vertex.Vertex;
-import com.raidoengine.engine.RDijkstra;
+import com.raidoengine.algorithm.RDijkstra;
+import com.raidoengine.model.constant.Constants;
+import com.raidoengine.model.edge.Edge;
+import com.raidoengine.model.graph.MapGraph;
+import com.raidoengine.model.graph.RailwayRouteGraph;
+import com.raidoengine.model.provider.TimeProvider;
+import com.raidoengine.model.route.TrainRoute;
+import com.raidoengine.model.vertex.Vertex;
 import com.raidoengine.routeparsing.TrainRouteMapper;
 import com.raidoengine.routeparsing.TrainRouteParser;
 import com.raidoengine.util.Triple;
-import javafx.util.Pair;
 
+import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
+/**
+ * @author ace. 21-Mar-18.
+ */
 public class Raido {
-
-    private final TrainRouteParser trainRouteParser = new TrainRouteParser("src/test/resources/trains");
+    private final TrainRouteParser trainRouteParser = new TrainRouteParser("raido-engine/src/test/resources/trains");
     private final List<TrainRoute> trainRoutes = TrainRouteMapper.mapFromLocal(trainRouteParser.getTrainRouteLocals());
+    private final RailwayRouteGraph railwayRouteGraph;
 
-    private List<TrainRoute> trainRoutesWithoutTransfers = new ArrayList<>();
+    private Vertex startVertex;
+    private Vertex goalVertex;
 
-    private List<TrainRoute> trainRoutesFromA = new ArrayList<>();
-    private List<TrainRoute> trainRoutesFromB = new ArrayList<>();
+    public Raido(String start, String goal, LocalDateTime startTime) {
+        TimeProvider.startTime = Objects.nonNull(startTime) ? startTime : TimeProvider.TODAY;
+        railwayRouteGraph = new RailwayRouteGraph(trainRoutes);
+        startVertex = railwayRouteGraph.getVertexByStationName(start);
+        goalVertex = railwayRouteGraph.getVertexByStationName(goal);
+    }
 
-    private Set<Long> alreadyFoundIds = new HashSet<>();
-
-    private final RDijkstra rDijkstra = new RDijkstra();
-
-    private String start;
-    private String goal;
-
-    public Set<List<Triple<Long, Edge, Float>>> getSetOfRouteLists(String start, String goal) {
-        this.start = start;
-        this.goal = goal;
-
-        findRoutesWithoutTransfers(start, goal);
-
-        List<Pair<TrainRoute, TrainRoute>> routePairs = new ArrayList<>();
-
-        trainRoutesWithoutTransfers.forEach(trainRoute -> routePairs.add(new Pair<>(trainRoute, null)));
-
-        if (routePairs.size() < 10) {
-            routePairs.addAll(getRoutePairs(start, goal));
+    public static void main(String[] args) {
+        String start = "Берегове";
+        String goal = "Запоріжжя-1";
+        LocalDateTime startTime = TimeProvider.TODAY.plusHours(0);
+        Raido raido = new Raido(start, goal, startTime);
+        if (Objects.isNull(raido.startVertex)) {
+            System.out.println("Not such start station");
+        } else if (Objects.isNull(raido.goalVertex)) {
+            System.out.println("Not such goal station");
+        } else {
+            List<List<Triple<Long, Edge, Float>>> routes = raido.rRGDijkstraPaths();
+            raido.printResult(routes);
         }
+    }
 
-        routePairs.forEach(pair -> {
-            RailwayRouteGraph railwayRouteGraph;
-            if (pair.getValue() == null) {
-                railwayRouteGraph = new RailwayRouteGraph(Collections.singletonList(pair.getKey()));
-            } else {
-                railwayRouteGraph = new RailwayRouteGraph(Arrays.asList(pair.getKey(), pair.getValue()));
+    public List<List<Triple<Long, Edge, Float>>> getRoutes() {
+        if (Objects.isNull(this.startVertex) || Objects.isNull(this.goalVertex)) {
+            return null;
+        } else {
+            return rRGDijkstraPaths();
+        }
+    }
+
+    public Vertex getStartVertex() {
+        return startVertex;
+    }
+
+    public Vertex getGoalVertex() {
+        return goalVertex;
+    }
+
+    public List<TrainRoute> getTrainRoutes() {
+        return trainRoutes;
+    }
+
+    private List<List<Triple<Long, Edge, Float>>> rRGDijkstraPaths() {
+        final RDijkstra rDijkstra = new RDijkstra(railwayRouteGraph.getGraph(), startVertex, goalVertex);
+
+        trainRoutes.addAll(railwayRouteGraph.getGeneratedRoutes());
+        List<List<Triple<Long, Edge, Float>>> routes = rDijkstra.getRouteIdEdgeCostListSet();
+        rDijkstra.calculateShortestPath();
+
+        Set<Long> routeIdsToDisable = new HashSet<>(rDijkstra.getRouteIdsToDisable());
+        routeIdsToDisable.forEach(routeId -> {
+            rDijkstra.getCurrentlyDisabledRouteIds().clear();
+            rDijkstra.getCurrentlyDisabledRouteIds().add(routeId);
+            do {
+                rDijkstra.calculateShortestPath();
             }
+            while ((!routes.isEmpty() && !routes.get(routes.size() - 1).isEmpty()) && routes.size() < Constants.MAX_AMOUNT_OF_ALGORITHM_PASSES);
 
-            rDijkstra.getShortestPath(railwayRouteGraph.getGraph(), railwayRouteGraph.getStationVertex(start), railwayRouteGraph.getStationVertex(goal));
+            if (routes.get(routes.size() - 1).isEmpty()) {
+                routes.remove(routes.size() - 1);
+            }
         });
 
-        List<List<Triple<Long, Edge, Float>>> routeIdEdgeCostListSet = rDijkstra.getRouteIdEdgeCostListSet();
-        sortResultByCost(routeIdEdgeCostListSet);
-
-        List<List<Triple<Long, Edge, Float>>> routeIdEdgeCostListSetCut = routeIdEdgeCostListSet
-                .subList(0, routeIdEdgeCostListSet.size() > 50 ? 50 : routeIdEdgeCostListSet.size() == 0 ? 0 : routeIdEdgeCostListSet.size() - 1);
-
-        return new HashSet<>(routeIdEdgeCostListSetCut);
-    }
-
-
-
-    private void findRoutesWithoutTransfers(String startName, String goalName) {
-        List<TrainRoute> allTrainRoutesWithoutTransfers = trainRoutes.stream().filter(trainRoute -> trainRoute.getTrainRouteSchedule().stream()
-                .anyMatch(sad -> sad.getLeft().getName().contains(startName)) && trainRoute.getTrainRouteSchedule().stream()
-                .anyMatch(sad -> sad.getLeft().getName().contains(goalName))).collect(Collectors.toList());
-
-        alreadyFoundIds.addAll(allTrainRoutesWithoutTransfers.stream().map(TrainRoute::getRouteId).collect(Collectors.toList()));
-
-        trainRoutesWithoutTransfers.addAll(allTrainRoutesWithoutTransfers.stream().filter(trainRoute -> trainRoute.areInOrder(startName, goalName)).collect(Collectors.toList()));
-    }
-
-    private List<Pair<TrainRoute, TrainRoute>> getRoutePairs(String startName, String goalName) {
-
-        trainRoutesFromA = getTrainRoutesFromStation(startName);
-        trainRoutesFromB = getTrainRoutesFromStation(goalName);
-
-        return getPairOfRoutesWithCommonStation(trainRoutesFromA, trainRoutesFromB);
-    }
-
-    private List<TrainRoute> getTrainRoutesFromStation(String stationName) {
-        if (alreadyFoundIds == null) alreadyFoundIds = Collections.emptySet();
-
-        final Set<Long> finalExceptionRoutes = alreadyFoundIds;
-        return trainRoutes.stream().filter(trainRoute -> !finalExceptionRoutes.contains(trainRoute.getRouteId())
-                && trainRoute.getTrainRouteSchedule().stream()
-                .anyMatch(sad -> sad.getLeft().getName().contains(stationName))).collect(Collectors.toList());
-    }
-
-    // TODO MAKE WITH COMMON SETTLEMENT.
-    private List<Pair<TrainRoute, TrainRoute>> getPairOfRoutesWithCommonStation(List<TrainRoute> trainRoutesFromA, List<TrainRoute> trainRoutesFromB) {
-        List<Pair<TrainRoute, TrainRoute>> pairOfRoutesWithCommonStation = new ArrayList<>();
-
-        trainRoutesFromA.forEach(trainRouteA -> trainRouteA.getTrainRouteSchedule().forEach(sad -> {
-            final boolean[] addA = {false};
-            trainRoutesFromB.forEach(trainRouteB -> {
-                if (!trainRouteA.getRouteId().equals(trainRouteB.getRouteId())
-                        && !isPresent(trainRouteA, trainRouteB, pairOfRoutesWithCommonStation)
-                        && !trainRouteA.getTrain().equals(trainRouteB.getTrain())
-                        && trainRouteB.hasStation(sad.getLeft())
-                        && trainRouteA.areInOrder(start, sad.getLeft().getName())
-                        && trainRouteB.areInOrder(sad.getLeft().getName(), goal)) {
-                    pairOfRoutesWithCommonStation.add(new Pair<>(trainRouteA, trainRouteB));
-                    alreadyFoundIds.add(trainRouteB.getRouteId());
-                    addA[0] = true;
-                }
-            });
-            if (addA[0]) alreadyFoundIds.add(trainRouteA.getRouteId());
-        }));
-
-        return pairOfRoutesWithCommonStation;
-    }
-
-    private boolean isPresent(TrainRoute a, TrainRoute b, List<Pair<TrainRoute, TrainRoute>> pairs) {
-        return pairs.stream().anyMatch(pair -> (pair.getKey().getRouteId().equals(a.getRouteId()) && pair.getValue().getRouteId().equals(b.getRouteId()))
-        || pair.getValue().getRouteId().equals(a.getRouteId()) && pair.getKey().getRouteId().equals(b.getRouteId()));
-    }
-
-    private void sortResultByCost(List<List<Triple<Long, Edge, Float>>> routeIdEdgeCostListSet) {
-        routeIdEdgeCostListSet.sort((o1, o2) -> {
+        routes.sort((o1, o2) -> {
             final Float[] cost1 = {0F};
             final Float[] cost2 = {0F};
+
             o1.forEach(longEdgeFloatTriple -> cost1[0] += longEdgeFloatTriple.getRight());
             o2.forEach(longEdgeFloatTriple -> cost2[0] += longEdgeFloatTriple.getRight());
+
             return Float.compare(cost1[0], cost2[0]);
         });
+
+        cleanMapGraph(railwayRouteGraph);
+
+        return routes;
+    }
+
+    private void cleanMapGraph(MapGraph mapGraph) {
+        mapGraph.cleanGraph();
     }
 
     private void printResult(List<List<Triple<Long, Edge, Float>>> routeIdEdgeCostListSet) {
-        List<List<Triple<Long, Edge, Float>>> routeIdEdgeCostListSetCut = routeIdEdgeCostListSet.subList(0, routeIdEdgeCostListSet.size() > 50 ? 50 : routeIdEdgeCostListSet.size() - 1);
-        routeIdEdgeCostListSetCut.forEach(this::printSingleResult);
+        System.out.println("Start time: " + TimeProvider.startTime);
 
-        System.out.println("Found: " + routeIdEdgeCostListSet.size());
-        System.out.println("Printed: " + routeIdEdgeCostListSetCut.size());
+        routeIdEdgeCostListSet.forEach(this::printSingleResult);
+
+        System.out.println(routeIdEdgeCostListSet.size() + " routes found.");
     }
 
     private void printSingleResult(List<Triple<Long, Edge, Float>> routeIdEdgeCostList) {
@@ -148,8 +124,7 @@ public class Raido {
             TrainRoute tr = trainRoutes.stream().filter(trainRoute -> trainRoute.getRouteId().equals(routeIdEdgeCost.getLeft())).findFirst().orElse(null);
             if (Objects.isNull(tr)) {
                 route.append("Train route is null. RouteIdEdgeCost: ").append(routeIdEdgeCost);
-            }
-            else {
+            } else {
                 route.append("Поїзд№: ")
                         .append(tr.getTrain().getTrainNumber())
                         .append(". ")

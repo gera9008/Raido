@@ -46,6 +46,8 @@ dependencyManagement {
 
 
 dependencies {
+    compile project('raido-engine')
+
 	compile 'org.springframework.boot:spring-boot-starter-data-elasticsearch',
             'org.springframework.boot:spring-boot-starter-web',
 
